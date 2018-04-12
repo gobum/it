@@ -1,0 +1,24 @@
+{
+  "name": "@gobum/it",
+  "version": "0.0.1",
+  "description": "The simplest test driver for JavaScript",
+  "keywords": [
+    "it",
+    "test"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "leadzen (李战)",
+    "email": "leadzen@qq.com"
+  },
+  "bin": {
+    "it": "it"
+  },
+  "files": [
+    "it"
+  ],
+  "scripts": {
+    "test": "node it test.js",
+    "pub": "npm publish --access public"
+  }
+}
