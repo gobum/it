@@ -1,38 +1,38 @@
 #!/usr/bin/env node
 
 /** -----------------------------------------------------------------------------------------------
- * it.js
+ * print.js for nodejs
  */
-var log = console.log;
 
-function It(parent) {
-  function it(value, func) {
-    if (typeof func === "function") {
-      it.promise = it.promise.then(function () {
-        log(value);
-        var child = It(it);
-        return Promise.resolve(func(child)).then(function(){
-          return child.promise;
-        });
-      }).catch(function (error) {
-        log("  \x1b[31m⦸ %s\x1b[0m", error && error.message || error);
-      });
-    }
-    else {
-      log(value ? "  \x1b[32m✔ %s\x1b[0m" : "  \x1b[31m✘ %s\x1b[0m", source());
-    }
+var print = function (format, recolors, colors, redent) {
+  return function print(args, space) {
+    args = format.apply(undefined, args);
+
+    args = args.replace(recolors, function (s, id) {
+      return colors[id];
+    }) + colors[0];
+
+    args = args.replace(redent, space);
+
+    console.log(args);
   }
+}(
+  /* format: */ require("util").format,
+  /* recolors: */ /#([rgybmcs0#])/g,
+  /* colors: */ {
+    0: "\x1b[0m",   // RESET
+    r: "\x1b[31m",  // red
+    g: "\x1b[32m",  // green
+    y: "\x1b[33m",  // yellow
+    b: "\x1b[34m",  // blue
+    m: "\x1b[35m",  // magenta
+    c: "\x1b[36m",  // cyan
+    s: "\x1b[90m",  // silver
+    "#": "#"        // ESCAPE
+  },
+  /* redent: */ /^/gm
+);
 
-  it.promise = Promise.resolve();
-
-  it.delay = function (time, value) {
-    return new Promise(function (resolve) {
-      setTimeout(resolve, time, value);
-    });
-  }
-
-  return it;
-}
 
 /** -----------------------------------------------------------------------------------------------
  * src.js
@@ -76,6 +76,47 @@ function get(path) {
   return fs.readFileSync(path, "utf-8");
 }
 
+
+/** -----------------------------------------------------------------------------------------------
+ * it.js
+ *   测试驱动框架
+ */
+
+function It(parent) {
+  function it(value, func) {
+    if (typeof func === "function") {
+      it.promise = it.promise.then(function () {
+        it.log(value);
+        var child = It(it);
+        return Promise.resolve(func(child)).then(function(){
+          return child.promise;
+        });
+      }).catch(function (error) {
+        print(["#r⦸ %s", error && error.message || error], it.space + "  ");
+      });
+    }
+    else {
+      it.log(value ? "#g✔ %s" : "#r✘ %s", source());
+    }
+  }
+
+  it.space = parent ? parent.space + "  " : "";
+
+  it.promise = Promise.resolve();
+
+  it.log = function() {
+    print(arguments, it.space);
+  }
+
+  it.delay = function (time, value) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, time, value);
+    });
+  }
+
+  return it;
+}
+
 /** -----------------------------------------------------------------------------------------------
  * it
  */
@@ -83,7 +124,8 @@ var path = require("path");
 
 var files = process.argv.slice(2);
 if (files.length) {
-  global.it = It(null);
+  global.it = It(null);   // root it
+  
   files.map(function (file) {
     file = path.resolve(file);
     file = path.relative(__dirname, file);

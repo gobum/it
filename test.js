@@ -2,6 +2,7 @@ it("Test by normal function:", function(it){
   it("Child test", async function(it){
     var child = await it.delay(1000, "child")
     it(child === "child");
+    throw Error("Error Child test");
   });
 
   it(true);
@@ -13,8 +14,8 @@ it("Test by normal function:", function(it){
   });
 });
 
-it("Test by async function:", async function(value){
-  value = await it.delay(1000, true);
+it("Test by async function:", async function(it){
+  var value = await it.delay(1000, true);
   it(value);
   value = await it.delay(1000, false);
   it(!value);

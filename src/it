@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+
+//#include ./it.js
+
+/** -----------------------------------------------------------------------------------------------
+ * it
+ */
+var path = require("path");
+
+var files = process.argv.slice(2);
+if (files.length) {
+  global.it = It(null);   // root it
+  
+  files.map(function (file) {
+    file = path.resolve(file);
+    file = path.relative(__dirname, file);
+    if (/^[^./]/.test(file)) {
+      file = "./" + file;
+    }
+    require(file);
+  });
+}
