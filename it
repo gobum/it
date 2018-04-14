@@ -78,21 +78,40 @@ function get(path) {
 
 
 /** -----------------------------------------------------------------------------------------------
- * it.js
- *   测试驱动框架
+ * job.js
+ *   任务调度框架
  */
 
-function It(parent) {
+function Job(parent) {
+  var chain = Promise.resolve();
+  var job = {
+    it: it,
+    chain() {
+      return chain;
+    },
+    space: parent ? parent.space + "  " : "",
+    log() {
+      print(arguments, this.space + "  ");
+    },
+    time: Date.now(),
+    totalJobs: 0,
+    okeyJobs: 0,
+    failJobs: 0
+  }
+
   function it(value, func) {
     if (typeof func === "function") {
-      it.promise = it.promise.then(function () {
+      job.totalJobs ++;
+      chain = chain.then(function () {
         it.log(value);
-        var child = It(it);
-        return Promise.resolve(func(child)).then(function(){
-          return child.promise;
-        });
+        var child = Job(job);
+        value = func(child.it);
+        return Promise.resolve(value).then(child.chain);
+      }).then(function(){
+        job.okeyJobs ++;
       }).catch(function (error) {
-        print(["#r⦸ %s", error && error.message || error], it.space + "  ");
+        job.failJobs ++;
+        job.log("#r⦸ %s", error && error.message || error);
       });
     }
     else {
@@ -100,12 +119,8 @@ function It(parent) {
     }
   }
 
-  it.space = parent ? parent.space + "  " : "";
-
-  it.promise = Promise.resolve();
-
-  it.log = function() {
-    print(arguments, it.space);
+  it.log = function () {
+    print(arguments, job.space);
   }
 
   it.delay = function (time, value) {
@@ -114,7 +129,14 @@ function It(parent) {
     });
   }
 
-  return it;
+  it.sum = function () {
+    chain = chain.then(function(){
+      // it.log("#b✈ Total: %d, okey: %d, fail: %d", job.totalJobs, job.okeyJobs, job.failJobs);
+      it.log("#bΣ Total: %d, okey: %d, fail: %d", job.totalJobs, job.okeyJobs, job.failJobs);
+    });
+  }
+
+  return job;
 }
 
 /** -----------------------------------------------------------------------------------------------
@@ -124,7 +146,7 @@ var path = require("path");
 
 var files = process.argv.slice(2);
 if (files.length) {
-  global.it = It(null);   // root it
+  global.it = Job().it;   // root it
   
   files.map(function (file) {
     file = path.resolve(file);
