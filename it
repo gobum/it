@@ -35,45 +35,65 @@ var print = function (format, recolors, colors, redent) {
 
 
 /** -----------------------------------------------------------------------------------------------
+ * trace.js
+ *   代码定位信息
+ */
+
+var trace = function (reWhere, reHere) {
+  return function _where_(deep) {
+    var stack = Error().stack.split("\n"), ms;
+    for (var i = 0, line; line = stack[i++];) {
+      if (line.match(reWhere)) break;
+    }
+    if (i < stack.length && (ms = String(stack[i + deep]).match(reHere))) {
+      return {
+        file: ms[1],
+        row: ms[2] - 1
+      };
+    }
+  };
+}(
+  /* reWhere: */ /\b_where_\b/,
+  /* reHere: */ /((?:https?:\/\/[\w.-]+(?::\d+)?|)[\w./@-]+(?:\?.*|)):(\d+):(\d+)/
+);
+
+/** -----------------------------------------------------------------------------------------------
  * src.js
  */
 
-var fs = require("fs");
-
-function source() {
-  var trace = _where_(2);
-  var lines = getlines(trace.loc);
-  var source = lines[trace.row];
-  return source ? source.trim() : "< no topic >";
-}
-
-function _where_(deep) {
-  var stack = Error().stack.split("\n"), ms;
-  for (var i = 0, line; line = stack[i++];) {
-    if (line.match(reWhere)) break;
+var src = function(fs) {
+  return function(file, row, len) {
+    var rows = getrows(file);
+    var source = rows[row];
+    return source ? source.trim() : "< no topic >";
   }
-  if (i < stack.length && (ms = String(stack[i + deep]).match(reHere))) {
-    return {
-      loc: ms[1],
-      row: ms[2] - 1
-    };
-  }
-}
-var reWhere = RegExp('\\b' + _where_.name + '\\b');
-var reHere = /((?:https?:\/\/[\w.-]+(?::\d+)?|)[\w./@-]+(?:\?.*|)):(\d+):(\d+)/;
 
-function getlines(path) {
-  if (path in getlines) {
-    path = getlines[path];
+  function getrows(file) {
+    if (file in getrows) {
+      file = getrows[file];
+    }
+    else {
+      file = getrows[file] = get(file).split("\n");
+    }
+    return file;
   }
-  else {
-    path = getlines[path] = get(path).split("\n");
+  
+  function get(file) {
+    return fs.readFileSync(file, "utf-8");
   }
-  return path;
-}
+    
+}(require("fs"));
 
-function get(path) {
-  return fs.readFileSync(path, "utf-8");
+/** -----------------------------------------------------------------------------------------------
+ * assert.js
+ *   原始断言类
+ */
+
+function Assert(value) {
+  return Object.setPrototypeOf({
+    value: value,
+    trace: trace(2)
+  }, Assert.prototype);
 }
 
 
@@ -83,59 +103,88 @@ function get(path) {
  */
 
 function Job(parent) {
-  var chain = Promise.resolve();
+  var space = parent ? parent.space + "  " : "";
+  var jobspace = space + "  ";
+  var assert = null;
   var job = {
     it: it,
-    chain() {
-      return chain;
-    },
-    space: parent ? parent.space + "  " : "",
-    log() {
-      print(arguments, this.space + "  ");
-    },
+    
+    chain() { return chain; },
+    reassert: reassert,
+    space: space,
+
     time: Date.now(),
     totalJobs: 0,
     okeyJobs: 0,
     failJobs: 0
   }
 
+  var chain = Promise.resolve();  //.then(reassert, reassert);
+
   function it(value, func) {
+    reassert();
     if (typeof func === "function") {
-      job.totalJobs ++;
+      job.totalJobs++;
       chain = chain.then(function () {
-        it.log(value);
+        log(value);
         var child = Job(job);
         value = func(child.it);
-        return Promise.resolve(value).then(child.chain);
-      }).then(function(){
-        job.okeyJobs ++;
+        return Promise.resolve(value)
+          .then(child.reassert, child.reassert)
+          .then(child.chain);
+      }).then(function () {
+        job.okeyJobs++;
       }).catch(function (error) {
-        job.failJobs ++;
-        job.log("#r⦸ %s", error && error.message || error);
+        job.failJobs++;
+        joblog("#r⦸ %s", error && error.message || error);
       });
     }
     else {
-      it.log(value ? "#g✔ %s" : "#r✘ %s", source());
+      assert = Assert(value);
+    }
+  }
+
+  function reassert(error) {
+    if(assert) {
+      if(assert instanceof Assert) {
+        var topic = src(assert.trace.file, assert.trace.row, 1);
+        log(assert.value ? "#g✔ %s" : "#r✘ %s", topic);            
+      }
+      assert = null;
+    }
+    if(error) {
+      throw error;
     }
   }
 
   it.log = function () {
-    print(arguments, job.space);
+    reassert();
+    print(arguments, space);
   }
 
   it.delay = function (time, value) {
+    reassert();
     return new Promise(function (resolve) {
       setTimeout(resolve, time, value);
     });
   }
 
   it.sum = function () {
-    chain = chain.then(function(){
+    reassert();
+    chain = chain.then(function () {
       // it.log("#b✈ Total: %d, okey: %d, fail: %d", job.totalJobs, job.okeyJobs, job.failJobs);
-      it.log("#bΣ Total: %d, okey: %d, fail: %d", job.totalJobs, job.okeyJobs, job.failJobs);
+      log("#bΣ Total: %d, okey: %d, fail: %d", job.totalJobs, job.okeyJobs, job.failJobs);
     });
   }
 
+  function log() {
+    print(arguments, space);
+  }
+
+  function joblog() {
+    print(arguments, jobspace);
+  }
+   
   return job;
 }
 
@@ -146,7 +195,7 @@ var path = require("path");
 
 var files = process.argv.slice(2);
 if (files.length) {
-  global.it = Job().it;   // root it
+  global.it = Job(null, Function.prototype).it;   // root it
   
   files.map(function (file) {
     file = path.resolve(file);
