@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-//#include ./job.js
+//#include ./it.js
 
 /** -----------------------------------------------------------------------------------------------
  * it
@@ -9,7 +9,7 @@ var path = require("path");
 
 var files = process.argv.slice(2);
 if (files.length) {
-  global.it = Job(null, Function.prototype).it;   // root it
+  global.it = It();   // root it
   
   files.map(function (file) {
     file = path.resolve(file);

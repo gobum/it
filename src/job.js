@@ -19,7 +19,7 @@ function Job(parent) {
     reassert: reassert,
     space: space,
 
-    time: Date.now(),
+    time: 0,
     totalJobs: 0,
     okeyJobs: 0,
     failJobs: 0
@@ -44,6 +44,11 @@ function Job(parent) {
         job.failJobs++;
         joblog("#r⦸ %s", error && error.message || error);
       });
+      return {
+        in(time){
+          child.time = time;
+        }
+      }
     }
     else {
       assert = Assert(value);

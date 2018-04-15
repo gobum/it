@@ -98,94 +98,94 @@ function Assert(value) {
 
 
 /** -----------------------------------------------------------------------------------------------
- * job.js
- *   任务调度框架
+ * it.js
+ *   测试驱动框架
  */
 
-function Job(parent) {
+function It(parent) {
   var space = parent ? parent.space + "  " : "";
-  var jobspace = space + "  ";
+  var time = 0;
+  var totalJobs = 0;
+  var okeyJobs = 0;
+  var failJobs = 0;
   var assert = null;
-  var job = {
-    it: it,
-    
-    chain() { return chain; },
-    reassert: reassert,
-    space: space,
-
-    time: Date.now(),
-    totalJobs: 0,
-    okeyJobs: 0,
-    failJobs: 0
-  }
-
-  var chain = Promise.resolve();  //.then(reassert, reassert);
+  var chain = Promise.resolve();
 
   function it(value, func) {
     reassert();
     if (typeof func === "function") {
-      job.totalJobs++;
+      totalJobs++;
       chain = chain.then(function () {
         log(value);
-        var child = Job(job);
-        value = func(child.it);
-        return Promise.resolve(value)
-          .then(child.reassert, child.reassert)
+        var child = It(it);
+        try {
+          value = Promise.resolve(func(child));
+        }
+        catch(error) {
+          value = Promise.reject(error);
+        }
+        return value.then(child.fulfill, child.reject)
           .then(child.chain);
       }).then(function () {
-        job.okeyJobs++;
+        okeyJobs++;
       }).catch(function (error) {
-        job.failJobs++;
-        joblog("#r⦸ %s", error && error.message || error);
+        failJobs++;
+        log("#r⦸ %s", error && error.message || error);
       });
+      return {
+        in(_time) {
+          time = _time
+        }
+      };
     }
     else {
       assert = Assert(value);
     }
   }
 
-  function reassert(error) {
-    if(assert) {
-      if(assert instanceof Assert) {
+  function reassert() {
+    if (assert) {
+      if (assert instanceof Assert) {
         var topic = src(assert.trace.file, assert.trace.row, 1);
-        log(assert.value ? "#g✔ %s" : "#r✘ %s", topic);            
+        log(assert.value ? "#g✔ %s" : "#r✘ %s", topic);
       }
       assert = null;
     }
-    if(error) {
-      throw error;
-    }
-  }
-
-  it.log = function () {
-    reassert();
-    print(arguments, space);
-  }
-
-  it.delay = function (time, value) {
-    reassert();
-    return new Promise(function (resolve) {
-      setTimeout(resolve, time, value);
-    });
-  }
-
-  it.sum = function () {
-    reassert();
-    chain = chain.then(function () {
-      // it.log("#b✈ Total: %d, okey: %d, fail: %d", job.totalJobs, job.okeyJobs, job.failJobs);
-      log("#bΣ Total: %d, okey: %d, fail: %d", job.totalJobs, job.okeyJobs, job.failJobs);
-    });
   }
 
   function log() {
     print(arguments, space);
   }
 
-  function joblog() {
-    print(arguments, jobspace);
-  }
-   
-  return job;
+  return Object.defineProperties(it, {
+    space: { value: space },
+
+    fulfill: { value: reassert },
+
+    reject: { value(error) { reassert(); throw error; } },
+
+    chain: { value() { return chain; } },
+    
+    log: { value() { reassert(); print(arguments, space); } },
+    
+    delay: {
+      value(time, value) {
+        reassert();
+        return new Promise(function (resolve) {
+          setTimeout(resolve, time, value);
+        });
+      }
+    },
+    
+    sum: {
+      value() {
+        reassert();
+        chain = chain.then(function () {
+          log("#bΣ Total: %d, okey: %d, fail: %d", totalJobs, okeyJobs, failJobs);
+        });
+      }
+    }
+  });
 }
 
 /** -----------------------------------------------------------------------------------------------
@@ -195,7 +195,7 @@ var path = require("path");
 
 var files = process.argv.slice(2);
 if (files.length) {
-  global.it = Job(null, Function.prototype).it;   // root it
+  global.it = It();   // root it
   
   files.map(function (file) {
     file = path.resolve(file);

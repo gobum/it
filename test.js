@@ -1,26 +1,32 @@
-it("Test by normal function:", function(it){
-  it("Child test", async function(it){
-    var child = await it.delay(10, "child")
-    it(child === "child");
-    throw Error("Error Child test");
+var t = 100;
+
+it("SSS", function(it){
+  it("SSS.1", function(it){
+    // it("sss.1.1");
+
+    it("SSS.1.1", function(it){
+      it("sss.1.1.1");
+    });
+
+    it("SSS.1.2", function(it){
+      it("sss.1.2.1");
+    });
+
+    throw Error("SSS.1.1");
   });
 
-  it(true);
-  it(!false);
-
-  it("Child test", async function(it){
-    var child = await it.delay(10, "child2")
-    it(child === "child2");
+  it("AAA.2", async function(it){
+    await it.delay(t);
+    it("aaa.2.1");
   });
-
   it.sum();
 });
 
-it("Test by async function:", async function(it){
-  var value = await it.delay(10, true);
-  it(value);
-  value = await it.delay(10, false);
-  it(!value);
+it("AAA", async function(it){
+  await it.delay(t);
+  it("aaa.1");
+  await it.delay(t);
+  it("aaa.2");
 });
 
 it.sum();
