@@ -9,7 +9,7 @@ var path = require("path");
 
 var files = process.argv.slice(2);
 if (files.length) {
-  global.it = It();   // root it
+  global.it = it;   // root it
   it.run();
   
   files.map(function (file) {

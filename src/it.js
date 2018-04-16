@@ -1,3 +1,4 @@
+//#include ./tagof.js
 //#include ./print.js
 //#include ./trace.js
 //#include ./src.js
@@ -7,55 +8,106 @@
  *   测试驱动框架
  */
 
-function It(parent, topic, func) {
-  var space = parent ? parent.space + "  " : "";
-  var jobs = [];
-  var totalJobs = 0;
+var it = (function () {
+  function jobify(func, parent, topic) {
+    func.parent = parent;
+    func.space = parent ? parent.space + "  " : "";
+    func.topic = topic;
+    func.jobs = [];
+    func.out = _out;
+    return func;
+  }
 
-  function it(value, func) {
-    if (typeof func === "function") {
-      jobs[totalJobs++] = It(it, value, func);
+  function it(any, func) {
+    var job = itsjob(it);
+
+    if (typeof any === "string" && typeof func === "function") {
+      job.jobs.push(jobify(func, job, any));
+      return tagof(func) === "Function"
+        ? {
+          then(callback) {
+            jobify(callback, job);
+            func.callback = callback;
+            return {
+              in(time) {
+                func.time = time;
+              }
+            };
+          }
+        }
+        : {
+          in(time) {
+            func.time = time;
+          }
+        };
     }
     else {
       func = trace(1);
       func = src(func.file, func.row, 1);
-      log(value ? "#g✔ %s" : "#r✘ %s", func);
+      job.out(any ? "#g✓ %s" : "#r✗ %s", func);
     }
   }
 
-  return Object.defineProperties(it, {
-    space: { value: space },
-    run: { value: run },
-    log: { value: log },
-    delay: { value: delay }
-    // sum() log("#bΣ Total: %d, okey: %d, fail: %d", totalJobs, okeyJobs, failJobs);
-  });
+  jobify(it);
 
-  function run() {
-    var promise = Promise.resolve(), i = 0;
-    if (func) {
-      promise = promise.then(function () {
-        parent.log(topic);
-        return func(it);
-      }).catch(function (error) {
-        log("#r⦸ %s", error && error.message || error);
-      });
-    }
+  it.run = function () {
+    runs(it.jobs);
+  }
 
-    return promise.then(function next(job) {
+  it.log = function log() {
+    var job = itsjob(log);
+    print(arguments, job.space);
+  };
+
+  it.delay = function (time, value) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, time, value);
+    });
+  };
+
+  function itsjob(it) {
+    return it.caller ? it.caller.jobs ? it.caller : it : it;
+  }
+
+  function runs(jobs, i) {
+    i = 0;
+    return Promise.resolve().then(function next(job) {
       if (job = jobs[i++]) {
-        return job.run().then(next);
+        return run(job).then(next);
       }
     });
   }
 
-  function log() {
-    print(arguments, space);
+  function run(job) {
+    var promise = new Promise(function(resolve, reject) {
+      job.parent.out(job.topic);
+      if(job.callback) {
+        job(resolve, reject);
+      }
+      else {
+        resolve(job());
+      }
+    });
+    if(job.callback) {
+      promise = promise.then(job.callback);
+    }
+    promise = promise.catch(function(error){
+      job.out("#r⦸ %s", error && error.message || error);
+    }).then(function(){
+      return runs(job.jobs);
+    });
+    if(job.callback) {
+      promise = promise.then(function(){
+        return runs(job.callback.jobs);
+      });
+    }
+
+    return promise;
   }
 
-  function delay(time, value) {
-    return new Promise(function (resolve) {
-      setTimeout(resolve, time, value);
-    });
+  function _out() {
+    print(arguments, this.space);
   }
-}
+
+  return it;
+})();
