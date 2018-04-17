@@ -1,16 +1,18 @@
+//#include ./dent.js
+
 /** -----------------------------------------------------------------------------------------------
  * print.js for nodejs
  */
 
-var print = function (format, recolors, colors, redent) {
-  return function print(args, space) {
+var print = function (format, recolors, colors) {
+  return function print(args, dent) {
     args = format.apply(undefined, args);
 
     args = args.replace(recolors, function (s, id) {
       return colors[id];
     }) + colors[0];
 
-    args = args.replace(redent, space);
+    args = indent(args, dent);
 
     console.log(args);
   }
@@ -27,6 +29,5 @@ var print = function (format, recolors, colors, redent) {
     c: "\x1b[36m",  // cyan
     s: "\x1b[90m",  // silver
     "#": "#"        // ESCAPE
-  },
-  /* redent: */ /^/gm
+  }
 );

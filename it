@@ -10,19 +10,47 @@ var tagof = function(toString, reTag){
   }
 }(Object.prototype.toString, /\[object ([^\]]+)/);
 
+var indent = function (regexp) {
+  return function (text, dent) {
+    text = String(text);
+    dent = dent | 0;
+    if (dent > 0) {
+      text = text.replace(regexp, " ".repeat(dent));
+    }
+    else if (dent < 0) {
+      dent = RegExp("^ {1," + -dent + "}", "gm");
+      text = text.replace(dent, "");
+    }
+    return text;
+  }
+}(/^/gm);
+
+var dentof = function (regexp) {
+  return function (text) {
+    text = String(text);
+    var dents = text.match(regexp);
+    return dents
+      ? dents.reduce(function (min, str) {
+        return (str = str.length) < min ? str : min;
+      }, text.length)
+      : 0;
+  }
+}(/^ *(?=\S)/gm);
+
+
 /** -----------------------------------------------------------------------------------------------
  * print.js for nodejs
  */
 
-var print = function (format, recolors, colors, redent) {
-  return function print(args, space) {
+var print = function (format, recolors, colors) {
+  return function print(args, dent) {
     args = format.apply(undefined, args);
 
     args = args.replace(recolors, function (s, id) {
       return colors[id];
     }) + colors[0];
 
-    args = args.replace(redent, space);
+    args = indent(args, dent);
 
     console.log(args);
   }
@@ -39,8 +67,7 @@ var print = function (format, recolors, colors, redent) {
     c: "\x1b[36m",  // cyan
     s: "\x1b[90m",  // silver
     "#": "#"        // ESCAPE
-  },
-  /* redent: */ /^/gm
+  }
 );
 
 
@@ -49,7 +76,7 @@ var print = function (format, recolors, colors, redent) {
  *   代码定位信息
  */
 
-var trace = function (reWhere, reHere) {
+var tracehead = function (reWhere, reHere) {
   return function _where_(deep) {
     var stack = Error().stack.split("\n"), ms;
     for (var i = 0, line; line = stack[i++];) {
@@ -67,32 +94,121 @@ var trace = function (reWhere, reHere) {
   /* reHere: */ /((?:https?:\/\/[\w.-]+(?::\d+)?|)[\w./@-]+(?:\?.*|)):(\d+):(\d+)/
 );
 
+function tracetail(file, row) {
+  var reFile = RegExp(file + ":(\\d+):(\\d+)");
+  var stack = Error().stack.split("\n"), ms;
+  for (var i = 0, line; line = stack[i++];) {
+    if (ms = line.match(reFile)) {
+      if (ms[1] > row) {
+        return { row: ms[1] };
+      }
+    }
+  }
+}
+
+
+
 /** -----------------------------------------------------------------------------------------------
  * src.js
  */
 
 var src = function(fs) {
-  return function(file, row, len) {
+  return function(file, head, tail) {
+    var source;
     var rows = getrows(file);
-    var source = rows[row];
-    return source ? source.trim() : "< no topic >";
+    if(rows) {
+      source = rows.slice(head, tail).join("\n");
+      source = indent(source, -dentof(source));
+    }
+    return source || "<codeless>";
   }
 
   function getrows(file) {
+    var rows;
     if (file in getrows) {
-      file = getrows[file];
+      rows = getrows[file];
     }
     else {
-      file = getrows[file] = get(file).split("\n");
+      rows = getrows[file] = get(file).split("\n");
     }
-    return file;
+    return rows;
   }
   
   function get(file) {
-    return fs.readFileSync(file, "utf-8");
+    try {
+      file = fs.readFileSync(file, "utf-8");
+    }
+    catch(e) {
+      file = "";
+    }
+    return file;
   }
     
 }(require("fs"));
+
+
+/** -----------------------------------------------------------------------------------------------
+ * assert.js
+ *   原始断言类
+ */
+
+function Assert(job, any) {
+  return Object.setPrototypeOf({
+    job: job,
+    any: any,
+    _not: 0,
+    head: tracehead(2),
+    state: 0
+  }, Assert.prototype);
+}
+
+Assert.prototype = {
+  get desc() {
+    return this.topic || this.source;
+  },
+
+  get source() {
+    var head = this.head;
+    if(head) {
+      var file = head.file, row = head.row;
+      var tail = tracetail(file, row);
+      if(tail) {
+        return src(file, row, tail.row);
+      }
+    }
+    return "<codeless>";
+  },
+
+  get ok() {
+    if(this.any && !this._not) {
+      this.state = 1;
+    }
+    else {
+      this.state = -1;
+      // this.reason = inspect(this.any) + as_is_ok(this._not);
+    }
+    this.report();
+  },
+
+  report() {
+    var state = this.state;
+    var desc = indent(this.desc, 2).trim();
+    if(state>0) {
+      desc = "#g✓ " + desc;
+    }
+    else if(state<0) {
+      desc = "#r✗ " + desc;
+      if(this.reason) {
+        desc += "\n#s" + ident(this.reson, 2);
+      }
+    }
+    else {
+      desc = "#y " + desc;
+    }
+    this.job.out(desc);
+  }
+}
+
 
 
 /** -----------------------------------------------------------------------------------------------
@@ -101,54 +217,33 @@ var src = function(fs) {
  */
 
 var it = (function () {
-  function jobify(func, parent, topic) {
-    func.parent = parent;
-    func.space = parent ? parent.space + "  " : "";
-    func.topic = topic;
-    func.jobs = [];
-    func.out = _out;
-    return func;
-  }
-
   function it(any, func) {
-    var job = itsjob(it);
+    var job = it.job;
 
     if (typeof any === "string" && typeof func === "function") {
-      job.jobs.push(jobify(func, job, any));
+      var child = Job(func, job, any);
+      job.add(child);
       return tagof(func) === "Function"
         ? {
-          then(callback) {
-            jobify(callback, job);
-            func.callback = callback;
-            return {
-              in(time) {
-                func.time = time;
-              }
-            };
+          then(func) {
+            child.callback = Job(func, job);
+            return { in: child.in };
           }
         }
         : {
-          in(time) {
-            func.time = time;
-          }
+          in: child.in
         };
     }
     else {
-      func = trace(1);
-      func = src(func.file, func.row, 1);
-      job.out(any ? "#g✓ %s" : "#r✗ %s", func);
+      // func = trace(1);
+      // func = src(func.file, func.row, 1);
+      // job.out(any ? "#g✓ %s" : "#r✗ %s", func);
+      return Assert(job, any);
     }
   }
 
-  jobify(it);
-
-  it.run = function () {
-    runs(it.jobs);
-  }
-
   it.log = function log() {
-    var job = itsjob(log);
-    print(arguments, job.space);
+    it.job.out.apply(undefined, arguments);
   };
 
   it.delay = function (time, value) {
@@ -157,51 +252,89 @@ var it = (function () {
     });
   };
 
-  function itsjob(it) {
-    return it.caller ? it.caller.jobs ? it.caller : it : it;
-  }
+  function Job(job, parent, topic) {
+    job.parent = parent;
+    var dent = job.dent = parent ? parent.dent + 2 : 0;
+    var jobs = [];
+    var totalJobs = 0;
+    var time = 0;
+    job.add = jobs.push.bind(jobs);
+    job.run = run;
+    job.jobs = runs;
+    job.out = out;
+    job.in = function (_time) { time = _time };
+    return job;
 
-  function runs(jobs, i) {
-    i = 0;
-    return Promise.resolve().then(function next(job) {
-      if (job = jobs[i++]) {
-        return run(job).then(next);
-      }
-    });
-  }
-
-  function run(job) {
-    var promise = new Promise(function(resolve, reject) {
-      job.parent.out(job.topic);
-      if(job.callback) {
-        job(resolve, reject);
-      }
-      else {
-        resolve(job());
-      }
-    });
-    if(job.callback) {
-      promise = promise.then(job.callback);
+    function runs() {
+      var job = it.job, i = 0;
+      return Promise.resolve().then(function next(job) {
+        if (job = jobs[i++]) {
+          return job.run().then(next);
+        }
+      }).then(
+        function () {
+          it.job = job;
+        },
+        function(error) {
+          it.job = job;
+          throw error;
+        }
+      );
     }
-    promise = promise.catch(function(error){
-      job.out("#r⦸ %s", error && error.message || error);
-    }).then(function(){
-      return runs(job.jobs);
-    });
-    if(job.callback) {
-      promise = promise.then(function(){
-        return runs(job.callback.jobs);
+
+    function run() {
+      var promise = new Promise(function (resolve, reject) {
+        parent.out(topic);
+        it.job = job;
+        if (job.callback) {
+          job(resolve, reject);
+        }
+        else {
+          resolve(job());
+        }
       });
+
+      if (time) {
+        var timeout;
+        promise = Promise.race([
+          promise.then(
+            function (value) {
+              clearTimeout(timeout);
+              return value;
+            },
+            function (error) {
+              clearTimeout(timeout);
+              throw error;
+            }
+          ),
+          new Promise(function (resolve, reject) {
+            timeout = setTimeout(reject, time, Error("Timeout " + time + "ms!"));
+          })
+        ]);
+      }
+
+      if (job.callback) {
+        promise = promise.then(job.callback);
+      }
+      promise = promise.catch(function (error) {
+        out("#r⦸ %s", error && error.message || error);
+      }).then(runs);
+      if (job.callback) {
+        promise = promise.then(job.callback.jobs);
+      }
+      return promise;
     }
 
-    return promise;
+    function out() {
+      print(arguments, dent);
+    }
+
+    function settle() {
+
+    }
   }
 
-  function _out() {
-    print(arguments, this.space);
-  }
-
-  return it;
+  return Job(it.job = it);
 })();
 
 
@@ -213,7 +346,7 @@ var path = require("path");
 var files = process.argv.slice(2);
 if (files.length) {
   global.it = it;   // root it
-  it.run();
+  it.jobs();
   
   files.map(function (file) {
     file = path.resolve(file);

@@ -1,5 +1,6 @@
-var t = 100;
+"use strict";
 
+var t = 0;
 it("SSS", async function(){
   it("SSS.1", async function(){
     it("SSS.1.1", async function(){
@@ -13,7 +14,7 @@ it("SSS", async function(){
       it("sss.1.2.1");
       it("sss.1.2.2");
       it("sss.1.2.3");
-      throw Error("SSS.1.2");
+      // throw Error("SSS.1.2");
       it("sss.1.2.4");
     });
     await it("SSS.1.3", async function(){

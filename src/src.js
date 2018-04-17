@@ -1,26 +1,39 @@
+//#include ./dent.js
+
 /** -----------------------------------------------------------------------------------------------
  * src.js
  */
 
 var src = function(fs) {
-  return function(file, row, len) {
+  return function(file, head, tail) {
+    var source;
     var rows = getrows(file);
-    var source = rows[row];
-    return source ? source.trim() : "< no topic >";
+    if(rows) {
+      source = rows.slice(head, tail).join("\n");
+      source = indent(source, -dentof(source));
+    }
+    return source || "<codeless>";
   }
 
   function getrows(file) {
+    var rows;
     if (file in getrows) {
-      file = getrows[file];
+      rows = getrows[file];
     }
     else {
-      file = getrows[file] = get(file).split("\n");
+      rows = getrows[file] = get(file).split("\n");
     }
-    return file;
+    return rows;
   }
   
   function get(file) {
-    return fs.readFileSync(file, "utf-8");
+    try {
+      file = fs.readFileSync(file, "utf-8");
+    }
+    catch(e) {
+      file = "";
+    }
+    return file;
   }
     
 }(require("fs"));
