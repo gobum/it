@@ -222,7 +222,7 @@ var it = (function () {
 
     if (typeof any === "string" && typeof func === "function") {
       var child = Job(func, job, any);
-      job.add(child);
+      job.addChild(child);
       return tagof(func) === "Function"
         ? {
           then(func) {
@@ -235,9 +235,6 @@ var it = (function () {
         };
     }
     else {
-      // func = trace(1);
-      // func = src(func.file, func.row, 1);
-      // job.out(any ? "#g✓ %s" : "#r✗ %s", func);
       return Assert(job, any);
     }
   }
@@ -257,25 +254,29 @@ var it = (function () {
     var dent = job.dent = parent ? parent.dent + 2 : 0;
     var jobs = [];
     var totalJobs = 0;
+    var asserts = [];
     var time = 0;
-    job.add = jobs.push.bind(jobs);
+    job.addChild = jobs.push.bind(jobs);
     job.run = run;
     job.jobs = runs;
     job.out = out;
     job.in = function (_time) { time = _time };
+    job.settle = settle;
+
     return job;
 
     function runs() {
       var job = it.job, i = 0;
       return Promise.resolve().then(function next(job) {
         if (job = jobs[i++]) {
-          return job.run().then(next);
+          return job.run()
+            .then(next);
         }
       }).then(
         function () {
           it.job = job;
         },
-        function(error) {
+        function (error) {
           it.job = job;
           throw error;
         }

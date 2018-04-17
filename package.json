@@ -20,7 +20,7 @@
   "scripts": {
     "build": "mjc --define NODEJS -- src/it it",
     "test": "npm run build && node it test.js",
-    "pub": "npm publish --access public"
+    "pub": "npm run build && npm publish --access public"
   },
   "devDependencies": {
     "macrojs": "^0.2.1"
