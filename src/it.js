@@ -1,4 +1,5 @@
 //#include ./tagof.js
+//#include @gobum/go
 //#include ./print.js
 //#include ./assert.js
 
@@ -82,7 +83,7 @@ var it = (function () {
           job(resolve, reject);
         }
         else {
-          resolve(job());
+          resolve(go(job()));
         }
       });
 

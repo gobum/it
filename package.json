@@ -1,6 +1,6 @@
 {
   "name": "@gobum/it",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "The simplest test driver for JavaScript",
   "keywords": [
     "it",
@@ -23,6 +23,7 @@
     "pub": "npm run build && npm publish --access public"
   },
   "devDependencies": {
+    "@gobum/go": "0.0.2",
     "macrojs": "^0.2.1"
   }
 }
