@@ -19,7 +19,12 @@
   ],
   "scripts": {
     "build": "mjc --define NODEJS -- src/it it",
-    "test": "npm run build && node it test.js",
+    "unit": "npm run build --slient && node it",
+    "test": "npm run okey --slient && npm run fail --slient && npm run error --slient",
+    "okey": "npm run build --silent && node it test/okey/*.js",
+    "fail": "npm run build --silent && node it test/fail/*.js",
+    "miss": "npm run build --silent && node it test/miss/*.js",
+    "error": "npm run build --silent && node it test/error/*.js",
     "pub": "npm run build && npm publish --access public"
   },
   "devDependencies": {

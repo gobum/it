@@ -1,5 +1,6 @@
-//#include ./tagof.js
+//#include ./lib/tagof.js
 //#include @gobum/go
+//#include ./promise.js
 //#include ./print.js
 //#include ./assert.js
 
@@ -9,53 +10,59 @@
  */
 
 var it = (function () {
-  function it(any, func) {
-    var job = it.job;
+  function it(any) {
+    return it.job.settle().assert = Assert(arguments);
+  }
 
-    if (typeof any === "string" && typeof func === "function") {
-      var child = Job(func, job, any);
-      job.addChild(child);
-      return tagof(func) === "Function"
+  it.do = it.does = function (topic, job) {
+    it.job.settle();
+    if (typeof job === "function") {
+      Job(job, topic);
+      it.job.add(job);
+
+      return tagof(job) === "Function"
         ? {
           then(func) {
-            child.callback = Job(func, job);
-            return { in: child.in };
+            job.callback = Job(func, job);
+            return { in: job.in };
           }
         }
-        : {
-          in: child.in
-        };
-    }
-    else {
-      return Assert(job, any);
+        : { in: job.in };
     }
   }
 
-  it.log = function log() {
-    it.job.out.apply(undefined, arguments);
+  it.log = function () {
+    var job = it.job;
+    job.settle();
+    job.log.apply(undefined, arguments);
   };
 
   it.delay = function (time, value) {
+    it.job.settle();
     return new Promise(function (resolve) {
       setTimeout(resolve, time, value);
     });
   };
 
-  function Job(job, parent, topic) {
-    job.parent = parent;
-    var dent = job.dent = parent ? parent.dent + 2 : 0;
+  function Job(job, topic) {
+    var dent = job.dent = job === it ?  0 : it.job.dent + 2;
     var jobs = [];
     var totalJobs = 0;
     var asserts = [];
     var time = 0;
-    job.addChild = jobs.push.bind(jobs);
+    job.add = add;
     job.run = run;
     job.jobs = runs;
-    job.out = out;
+    job.log = log;
     job.in = function (_time) { time = _time };
+    job.assert = null;
     job.settle = settle;
 
     return job;
+
+    function add(job) {
+      return jobs[totalJobs++] = job;
+    }
 
     function runs() {
       var job = it.job, i = 0;
@@ -64,20 +71,14 @@ var it = (function () {
           return job.run()
             .then(next);
         }
-      }).then(
-        function () {
-          it.job = job;
-        },
-        function (error) {
-          it.job = job;
-          throw error;
-        }
-      );
+      }).finally(function () {
+        it.job = job;
+      });
     }
 
     function run() {
       var promise = new Promise(function (resolve, reject) {
-        parent.out(topic);
+        out(topic);
         it.job = job;
         if (job.callback) {
           job(resolve, reject);
@@ -90,27 +91,22 @@ var it = (function () {
       if (time) {
         var timeout;
         promise = Promise.race([
-          promise.then(
-            function (value) {
-              clearTimeout(timeout);
-              return value;
-            },
-            function (error) {
-              clearTimeout(timeout);
-              throw error;
-            }
-          ),
+          promise.finally(function () {
+            clearTimeout(timeout);
+          }),
           new Promise(function (resolve, reject) {
             timeout = setTimeout(reject, time, Error("Timeout " + time + "ms!"));
           })
         ]);
       }
 
+      promise = promise.finally(settle);
       if (job.callback) {
         promise = promise.then(job.callback);
       }
+      promise = promise.finally(settle);
       promise = promise.catch(function (error) {
-        out("#r⦸ %s", error && error.message || error);
+        log("#m⦸ %s", error && error.message || error);
       }).then(runs);
       if (job.callback) {
         promise = promise.then(job.callback.jobs);
@@ -119,11 +115,22 @@ var it = (function () {
     }
 
     function out() {
+      print(arguments, dent-2);
+    }
+    
+    function log() {
       print(arguments, dent);
     }
 
     function settle() {
-
+      var assert = job.assert;
+      if (assert) {
+        if (!assert.state) {
+          assert.settle();
+        }
+        job.assert = null;
+      }
+      return job;
     }
   }
 

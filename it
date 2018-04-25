@@ -60,6 +60,30 @@ var go = function (toString, reIsGenerator) {
   /\[object (?:Async)?Generator\]/  // reIsGenerator
 );
 
+/** -----------------------------------------------------------------------------------------------
+ * promise.js
+ */
+
+(function (prototype, define) {
+  if (!prototype.finally) {
+    define(prototype, {
+      finally: {
+        value(onFinally) {
+          return this.then(
+            function (value) {
+              onFinally();
+              return value;
+            },
+            function (error) {
+              onFinally();
+              throw error;
+            }
+          );
+        }
+      }
+    });
+  }
+})(Promise.prototype, Object.defineProperties);
 var indent = function (regexp) {
   return function (text, dent) {
     text = String(text);
@@ -121,6 +145,7 @@ var print = function (format, recolors, colors) {
 );
 
 
+var nop = Function.prototype;
 /** -----------------------------------------------------------------------------------------------
  * trace.js
  *   代码定位信息
@@ -150,7 +175,7 @@ function tracetail(file, row) {
   for (var i = 0, line; line = stack[i++];) {
     if (ms = line.match(reFile)) {
       if (ms[1] > row) {
-        return { row: ms[1] };
+        return { row: ms[1]-1 };
       }
     }
   }
@@ -202,63 +227,301 @@ var src = function(fs) {
  *   原始断言类
  */
 
-function Assert(job, any) {
-  return Object.setPrototypeOf({
-    job: job,
-    any: any,
-    _not: 0,
-    head: tracehead(2),
-    state: 0
-  }, Assert.prototype);
-}
+var Assert = function (setPrototype) {
 
-Assert.prototype = {
-  get desc() {
-    return this.topic || this.source;
-  },
-
-  get source() {
-    var head = this.head;
-    if(head) {
-      var file = head.file, row = head.row;
-      var tail = tracetail(file, row);
-      if(tail) {
-        return src(file, row, tail.row);
-      }
-    }
-    return "<codeless>";
-  },
-
-  get ok() {
-    if(this.any && !this._not) {
-      this.state = 1;
-    }
-    else {
-      this.state = -1;
-      // this.reason = inspect(this.any) + as_is_ok(this._not);
-    }
-    this.report();
-  },
-
-  report() {
-    var state = this.state;
-    var desc = indent(this.desc, 2).trim();
-    if(state>0) {
-      desc = "#g✓ " + desc;
-    }
-    else if(state<0) {
-      desc = "#r✗ " + desc;
-      if(this.reason) {
-        desc += "\n#s" + ident(this.reson, 2);
-      }
-    }
-    else {
-      desc = "#y " + desc;
-    }
-    this.job.out(desc);
+  function Assert(args) {
+    return setPrototype({
+      any: args[0],
+      topic: "",
+      _not: 0,
+      args: args,
+      head: tracehead(2),
+      state: 0
+    }, it_proto);
   }
+
+  Assert.prototype = {
+    get desc() {
+      return this.topic || this.source;
+    },
+
+    get source() {
+      var head = this.head;
+      if (head) {
+        var file = head.file;
+        head = head.row;
+        var tail = tracetail(file, head);
+        if (tail) {
+          tail = tail.row;
+        }
+        else {
+          tail = head + 1;
+        }
+        if (tail <= head) {
+          tail = head + 1;
+        }
+        return src(file, head, tail);
+      }
+      return "<codeless>";
+    },
+
+    report() {
+      var state = this.state;
+      var desc = indent(this.desc, 2).trim();
+      if (state > 0) {
+        desc = "#g√ " + desc;
+      }
+      else if (state < 0) {
+        desc = "#r☓ " + desc;
+        if (this.reason) {
+          desc += "\n#s" + indent(this.reason, 2);
+        }
+      }
+      else {
+        desc = "#y⚠ " + desc;
+      }
+      it.job.log(desc);
+    },
+
+    settle() {
+      this.report();
+    },
+
+    get not() {
+      this._not = !this._not;
+      return Object.setPrototypeOf(this, Assert.prototype); 
+    }
+  }
+
+  var it_proto = Object.setPrototypeOf({
+    settle() {
+      var args = this.args;
+      if (args.length === 1) {
+        this.state = args[0] ? 1 : -1;
+      }
+      else if (typeof args[1] === "function") {
+        this.topic = args[0];
+        try {
+          args[1]();
+          this.state = 1;
+        }
+        catch (error) {
+          this.state = -1;
+          this.reason = error && error.mesage || error;
+        }
+      }
+      this.report();
+    }
+  }, Assert.prototype);
+
+  Assert.define = function (props) {
+    Object.defineProperties(Assert.prototype, Object.getOwnPropertyDescriptors(props));
+  };
+
+  return Assert;
+}(Object.setPrototypeOf);
+
+(function () {
+  var typenames = ["undefined", "boolean", "number", "string", "symbol", "object", "function"];
+
+  function assert_typeof(assert, typename) {
+    if(!~typenames.indexOf(typename)) {
+      throw Error('Unknown type name: "'+typename+'"');
+    }
+    assert.state = typeof assert.any === typename && !this._not ? 1 : -1;
+    assert.report();
+  }
+
+  var type_of_any = {};
+
+  for(typename of typenames) {
+    Object.defineProperty(type_of_any, typename, {
+      get: getter_of(typename)
+    })
+  }
+
+  function getter_of(typename) {
+    return function() {
+      assert_typeof(this, typename);
+    }
+  }
+
+  Assert.define({
+    // it().typeof
+    get typeof() {
+      return proxify(
+        function (typename) {
+          assert_typeof(this, typename);
+        },
+        Object.setPrototypeOf(this, Assert.prototype),
+        type_of_any
+      );
+    },
+
+    // it().type.of
+    get type() {
+      var me = Object.setPrototypeOf(this, Assert.prototype);
+      return {
+        get of() {
+          return proxify(
+            function (typename) {
+              assert_typeof(me, typename);
+            },
+            me,
+            type_of_any
+          );
+        }
+      }
+    }
+  });
+
+})();
+(function(){
+  var types = [Object, Function, String, RegExp, Array, Boolean, Number, Date, Symbol, Error,
+    Promise, Map, Set, WeakMap, WeakSet, Proxy,
+    ArrayBuffer, DataView, Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array,
+    Float32Array, Float64Array, 
+    EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError];
+
+  function assert_instanceof(assert, type) {
+    assert.state = assert.any instanceof type && !this._not ? 1 : -1;
+    assert.report();
+  }
+
+  var instance_of_any = {
+  };
+
+  for(type of types) {
+    Object.defineProperty(instance_of_any, type.name, {
+      get: getter_of(type)
+    })
+  }
+
+  function getter_of(type) {
+    return function() {
+      assert_instanceof(this, type);
+    }
+  }
+
+  function asserter_of(assert) {
+    return proxify(
+      function(type) {
+        assert_instanceof(assert, type);
+      },
+      assert,
+      instance_of_any
+    )
+  }
+
+  Assert.define({
+    // it().instanceof
+    get instanceof() {
+      Object.setPrototypeOf(this, Assert.prototype);
+      return asserter_of(this);
+      // return proxify(
+      //   function(type) {
+      //     assert_instanceof(this, type);
+      //   },
+      //   Object.setPrototypeOf(this, Assert.prototype),
+      //   instance_of_any
+      // );
+    },
+
+    // it().instance.of
+    get instance() {
+      var me = Object.setPrototypeOf(this, Assert.prototype);
+      return {
+        of: asserter_of(this) 
+        // get of() {
+        //   return 
+          // return proxify(
+          //   function(type) {
+          //     assert_instanceof(me, type);
+          //   },
+          //   me,
+          //   instance_of_any        
+          // );
+        // }
+      }
+    }
+  });
+
+})();
+function proxify(proxy, self, proto) {
+  var proto = Object.getOwnPropertyDescriptors(proto);
+  var props = {};
+  for (var key in proto) {
+    var prop = proto[key];
+    if (typeof prop.value === "function") {
+      props[key] = {value: prop.value.bind(self)};
+    }
+    else if (prop.get || prop.set) {
+      props[key] = {
+        get: prop.get && prop.get.bind(self),
+        set: prop.set && prop.set.bind(self)
+      }
+    }
+  }
+  return Object.defineProperties(proxy, props);
 }
 
+
+(function () {
+
+  var is_any = Object.setPrototypeOf({
+    get null() {
+      this.state = this.any === null && !this._not ? 1 : -1;
+      this.report();
+    },
+    get undefined() {
+      this.state = this.any === undefined && !this._not ? 1 : -1;
+      this.report();
+    },
+    get ok() {
+      this.state = this.any && !this._not ? 1 : -1;
+      this.report();
+    },
+    get true() {
+      this.state = this.any === true && !this._not ? 1 : -1;
+      this.report();
+    },
+    get false() {
+      this.state = this.any === false && !this._not ? 1 : -1;
+      this.report();
+    },
+    get boolean() {
+      this.state = typeof this.any === "boolean" && !this._not ? 1 : -1;
+      this.report();
+    },
+    get number() {
+      this.state = typeof this.any === "number" && !this._not ? 1 : -1;
+      this.report();
+    },
+    get string() {
+      this.state = typeof this.any === "string" && !this._not ? 1 : -1;
+      this.report();
+    },
+    get symbol() {
+      this.state = typeof this.any === "symbol" && !this._not ? 1 : -1;
+      this.report();
+    },
+    get object() {
+      var any = this.any;
+      this.state = any && ( typeof any === "object" || typeof any === "function" ) && !this._not ? 1 : -1;
+      this.report();
+    },
+    get function() {
+      this.state = typeof this.any === "function" && !this._not ? 1 : -1;
+      this.report();
+    },
+}, Assert.prototype);
+
+  Assert.define({
+    get is() {
+      return Object.setPrototypeOf(this, is_any);
+    }
+  });
+})();
 
 
 /** -----------------------------------------------------------------------------------------------
@@ -267,53 +530,59 @@ Assert.prototype = {
  */
 
 var it = (function () {
-  function it(any, func) {
-    var job = it.job;
+  function it(any) {
+    return it.job.settle().assert = Assert(arguments);
+  }
 
-    if (typeof any === "string" && typeof func === "function") {
-      var child = Job(func, job, any);
-      job.addChild(child);
-      return tagof(func) === "Function"
+  it.do = it.does = function (topic, job) {
+    it.job.settle();
+    if (typeof job === "function") {
+      Job(job, topic);
+      it.job.add(job);
+
+      return tagof(job) === "Function"
         ? {
           then(func) {
-            child.callback = Job(func, job);
-            return { in: child.in };
+            job.callback = Job(func, job);
+            return { in: job.in };
           }
         }
-        : {
-          in: child.in
-        };
-    }
-    else {
-      return Assert(job, any);
+        : { in: job.in };
     }
   }
 
-  it.log = function log() {
-    it.job.out.apply(undefined, arguments);
+  it.log = function () {
+    var job = it.job;
+    job.settle();
+    job.log.apply(undefined, arguments);
   };
 
   it.delay = function (time, value) {
+    it.job.settle();
     return new Promise(function (resolve) {
       setTimeout(resolve, time, value);
     });
   };
 
-  function Job(job, parent, topic) {
-    job.parent = parent;
-    var dent = job.dent = parent ? parent.dent + 2 : 0;
+  function Job(job, topic) {
+    var dent = job.dent = job === it ?  0 : it.job.dent + 2;
     var jobs = [];
     var totalJobs = 0;
     var asserts = [];
     var time = 0;
-    job.addChild = jobs.push.bind(jobs);
+    job.add = add;
     job.run = run;
     job.jobs = runs;
-    job.out = out;
+    job.log = log;
     job.in = function (_time) { time = _time };
+    job.assert = null;
     job.settle = settle;
 
     return job;
+
+    function add(job) {
+      return jobs[totalJobs++] = job;
+    }
 
     function runs() {
       var job = it.job, i = 0;
@@ -322,20 +591,14 @@ var it = (function () {
           return job.run()
             .then(next);
         }
-      }).then(
-        function () {
-          it.job = job;
-        },
-        function (error) {
-          it.job = job;
-          throw error;
-        }
-      );
+      }).finally(function () {
+        it.job = job;
+      });
     }
 
     function run() {
       var promise = new Promise(function (resolve, reject) {
-        parent.out(topic);
+        out(topic);
         it.job = job;
         if (job.callback) {
           job(resolve, reject);
@@ -348,27 +611,22 @@ var it = (function () {
       if (time) {
         var timeout;
         promise = Promise.race([
-          promise.then(
-            function (value) {
-              clearTimeout(timeout);
-              return value;
-            },
-            function (error) {
-              clearTimeout(timeout);
-              throw error;
-            }
-          ),
+          promise.finally(function () {
+            clearTimeout(timeout);
+          }),
           new Promise(function (resolve, reject) {
             timeout = setTimeout(reject, time, Error("Timeout " + time + "ms!"));
           })
         ]);
       }
 
+      promise = promise.finally(settle);
       if (job.callback) {
         promise = promise.then(job.callback);
       }
+      promise = promise.finally(settle);
       promise = promise.catch(function (error) {
-        out("#r⦸ %s", error && error.message || error);
+        log("#m⦸ %s", error && error.message || error);
       }).then(runs);
       if (job.callback) {
         promise = promise.then(job.callback.jobs);
@@ -377,11 +635,22 @@ var it = (function () {
     }
 
     function out() {
+      print(arguments, dent-2);
+    }
+    
+    function log() {
       print(arguments, dent);
     }
 
     function settle() {
-
+      var assert = job.assert;
+      if (assert) {
+        if (!assert.state) {
+          assert.settle();
+        }
+        job.assert = null;
+      }
+      return job;
     }
   }
 
@@ -397,6 +666,7 @@ var path = require("path");
 var files = process.argv.slice(2);
 if (files.length) {
   global.it = it;   // root it
+  global.describe = it.does;
   it.jobs();
   
   files.map(function (file) {

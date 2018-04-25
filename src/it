@@ -10,6 +10,7 @@ var path = require("path");
 var files = process.argv.slice(2);
 if (files.length) {
   global.it = it;   // root it
+  global.describe = it.does;
   it.jobs();
   
   files.map(function (file) {

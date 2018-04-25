@@ -27,7 +27,7 @@ function tracetail(file, row) {
   for (var i = 0, line; line = stack[i++];) {
     if (ms = line.match(reFile)) {
       if (ms[1] > row) {
-        return { row: ms[1] };
+        return { row: ms[1]-1 };
       }
     }
   }

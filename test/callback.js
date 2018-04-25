@@ -1,4 +1,5 @@
 "use strict";
+var t = 10;
 
 it("Callback done:", function(done, fail){
   it.log("#sBefore callback.")
@@ -37,6 +38,7 @@ it("Callback done with timeout:", function(done, fail){
   it("Test job after callback:", function(){
     it("assert after callback").ok;
     it(false).ok;
+    it("123 is ok").if(123).is.ok;
   });
 }).in(1000);
 
