@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  dev:
+    container_name: it_dev
+    hostname: dev
+    build: .
+    image: it_dev
+    tty: true
+    volumes:
+      - ".:/workspace:cached"
+      - "~/.ssh:/root/.ssh"
